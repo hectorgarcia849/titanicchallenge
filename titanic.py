@@ -1,517 +1,537 @@
 # -*- coding: utf-8 -*-
 """
-Created on Sat Jan 21 22:35:07 2017
+Created on Thu Nov 23 23:25:05 2017
 
 @author: hecto
 """
 import sys
-import pandas as pd
-import numpy as np
-from sklearn.preprocessing import StandardScaler
-from sklearn.model_selection import train_test_split
-from sklearn.decomposition import PCA
-from sklearn.linear_model import LogisticRegression
-from sklearn.model_selection import cross_val_score
-from sklearn.pipeline import Pipeline
-from sklearn.model_selection import learning_curve
+
+# visualization
+from graph.curves import plot_learning_curve, plot_validation_curve, plot_confusion_matrix, plot_roc_curve, plot_decision_boundary
+import graphviz
+import pydotplus
+import seaborn as sns
 import matplotlib.pyplot as plt
-from sklearn.model_selection import validation_curve
-from sklearn.model_selection import GridSearchCV
-from sklearn.svm import SVC
-from sklearn.metrics import precision_score
-from sklearn.metrics import recall_score, f1_score
-from sklearn.metrics import classification_report
-from sklearn.tree import DecisionTreeClassifier
-from sklearn.metrics import confusion_matrix
-from graph.curves import plot_learning_curve, plot_validation_curve, plot_confusion_matrix
+
+#ui
+from menu import menu
+
+#data analysis and wrangling
+import collections
+import itertools
+import numpy as np
+import pandas as pd
+import re
+
+#preprocessing
+from sklearn.preprocessing import StandardScaler
+import statsmodels.formula.api as sm 
+from sklearn.preprocessing import PolynomialFeatures
+
+#model selection
+from sklearn.model_selection import train_test_split, learning_curve, validation_curve, cross_val_score, GridSearchCV
+
+#machine learning algorithms
+from sklearn.pipeline import Pipeline
+from sklearn.linear_model import LogisticRegression
+from sklearn.linear_model import LinearRegression
+from sklearn import tree
 from sklearn.ensemble import RandomForestClassifier
+from sklearn.neighbors import KNeighborsClassifier
+from sklearn.svm import SVC
 from sklearn.neural_network import MLPClassifier
+from sklearn.naive_bayes import GaussianNB
+from sklearn.feature_selection import f_regression, SelectPercentile, RFECV, SelectKBest
+
+#machine learning reports
+from sklearn.metrics import classification_report, confusion_matrix, roc_curve, roc_auc_score, r2_score, f1_score
+
+#dimensionality reduction
+from sklearn.decomposition import PCA
+
 
 def printf(format, *args):
     sys.stdout.write(format % args)
-
-def percentage_breakdown(num, den):
-    pb = round(num/float(den), 4)
-    return pb
     
-if __name__ == '__main__':#this is necessary for multithreading...
+def presentSection(SectionName):
+    print ("\n###" + SectionName + "###\n")    
     
-	#Welcome
-    print ("...............................................................................")
-    print ("Welcome To Titantic ML Challenge")
-    print ("...............................................................................\n")
-	
-	print("This is a command line program that verbosely trains machine learning algorithms.")
-	print("It provides some successful results in predicting the survival rate based on the passenger manifest.")
-	print("Note that program may appear to hang, but it is probably not.  Ensure to hit enter and close graphs to continue the program!")
+def presentStepTo(StepMessage):
+    input("\nPress Enter to " + StepMessage +"...\n")
 
-	input("Press Enter to continue...\n")
-
-    #exploring the data
-    print ("...............................................................................")
-    print ("Exploring and Cleaning the Data")
-    print ("...............................................................................\n")
+def get_title(name):
+    title_search = re.search(' ([A-Za-z]+)\.', name)
+    if title_search:
+        return title_search.group(1)
+    return "Unknown"
     
-    print ("<Loading the Titantic Challenge training and test .csv files>\n")
+def groupByTitle(title):
+    if(title == 'Capt' or title == 'Col' or title == 'Major'):
+        return "military_title"
+    if( title == "Don" or title == 'Jonkheer' or title == 'Sir' or title == "Countess" or title == 'Lady'):
+        return "noble_title"
+    if(title == "Dr" or title == "Rev"):
+        return "professional_title"
+    if(title == "Master" or title == "Mr" or title == "Miss" or title == "Mlle" or title == "Mme" or title == "Mrs" or title == "Ms"):
+        return "common_title"  
+    else:
+        return "unknown_Title"
+        
+def extractAndGroupTitles(name):
+    return groupByTitle(get_title(name))
+ 
+        
+if __name__ == '__main__':    
+        
+    ###Data Pre-Processing and Cleaning###    
+    
+    presentSection("Data Pre-Processing and Cleaning")
+    presentStepTo("Import the data set")
+        
     df_train = pd.read_csv("C:\\Users\\hecto\\Documents\\Programming\\Kaggle\\Titantic Challenge\\train.csv")
-    df_submit_test = pd.read_csv("C:\\Users\\hecto\\Documents\\Programming\\Kaggle\\Titantic Challenge\\test.csv")
+    print(df_train.head())
     
-    print ("Identified the Survived Feature as the Target label in the data set.....")
-    print ("<Splitting the Y Target label from the data set and storing in seperate array y>\n")
-    print ("<X stores the training data, X_test_submit stores the test data>\n")
+    presentStepTo("Split into data into independent variables and dependent variable")
+    X = df_train.copy()
+    y = df_train["Survived"].copy()
+    del X["Survived"]
     
-    y = df_train["Survived"];
-    X = df_train
-    X_test_submit = df_submit_test
-    del X["Survived"];
+    print (X.head())
+    print (y.head())
     
-    input("Press Enter to continue...\n")
+    presentStepTo("remove features that cannot be used because too much missing data or not relevant information")
+    printf ("Removing %s, %s, %s", "PassengerId", "Ticket", "Cabin\n")
     
-    print ("Remove Unneeded features from the dataset...\n")
-    print ("<Removing feature PassengerID>")
-    print ("PassengerID is an arbitrarily assigned number to each passenger\n")
-    print ("<Removing feature Ticket Number>")
-    print ("Ticket Number Ticket data does not seem to provide any information \nthat we can't get from the Passenger Class and Fare features.\n")
-    print ("<Removing Feature Cabin>")
-    print ("Cabin is missing data too much data.  In cabin (687 of 892 rows are \nmissing this data for this feature), besides the location of the cabin \na passenger was staying at does not equate to the location of the passenger \nwhen the Titanic was sinking.\n")
+    del X["PassengerId"], X["Ticket"], X["Cabin"]
     
-    del X["PassengerId"], X["Ticket"], X["Cabin"], X["Name"]
-    del X_test_submit["PassengerId"], X_test_submit["Ticket"], X_test_submit["Cabin"], X_test_submit["Name"]
+    presentStepTo("to extract titles from names")
+    printf("Though names in themselves not useful, titles can be extracted from the name feature to create new column")
     
-    input("Press Enter to continue...\n")
+    titles = X["Name"].apply(get_title).unique()
+    X["Title"] = X["Name"].apply(extractAndGroupTitles)
+    print(X["Title"].head())
     
-    print ("Search data for missing values: NaNs (not a number), blanks, and nulls...\n")
+    print("No longer have use for Name feature as Title extracted and is its own feature")
     
-    print ("Training data results for null values: \n")
+    del X["Name"]
+    
+    presentSection("Imputation")
+    
+    presentStepTo("Search for Missing Values")
     print (X.isnull().sum(), "\n")
-    print ("Test data results for missing values: \n")
-    print (X_test_submit.isnull().sum(), "\n")
+    printf ("y has %d missing values\n\n", y.isnull().sum())
     
-    mean_age_sib2 = round(X.groupby(X['SibSp'] <= 2.0).median()['Age'][1], 2)
-    mean_age_sib3 = round(X.groupby(X['SibSp'] > 2.0).median()['Age'][1], 2)
+    presentStepTo("impute location for Embarked")
+    print("Only two observations missing data for Embarked, using mode imputation since very few missing and is categorical")
+    embarked_mode = X["Embarked"].value_counts().index[0] #index 0, because that is max occurence.  Auto-sorted.
+    printf("The mode of Embarked location is %s\n", embarked_mode)
+    X['Embarked'] = X['Embarked'].fillna(embarked_mode)
     
-    print ("Interpolation, imputing mean, median and mode...\n")
-    print ("For Age, imputing the median age is appropriate since the value measures...")
-    print ("However, grouping age by Sibsp to get median age.")
-    print ("If person has Sipsp <= 2, imputed median age: ", mean_age_sib2)
-    print ("If person has Sipsp > 2, imputed median age: ", mean_age_sib3)
-    print ("<Using this median to impute into missing values for the Age feature in training and test set>\n")
+    presentStepTo("encode categorical variables, required for Regression Imputation...")
     
-    X['Age'] = X.groupby(X['SibSp'] <= 2.0)['Age'].fillna(mean_age_sib2)
-    X['Age'] = X.groupby(X['SibSp'] > 2.0)['Age'].fillna(mean_age_sib3)
-    X = X.round({'Age': 1})
-    
-    X_test_submit['Age'] = X_test_submit.groupby(X['SibSp'] <= 2.0)['Age'].fillna(mean_age_sib2)
-    X_test_submit['Age'] = X_test_submit.groupby(X['SibSp'] > 2.0)['Age'].fillna(mean_age_sib3)
-    
-    input("Press Enter to continue...\n")
-    
-    print ("For Fare, mean imputation is appropriate since the value measures...")
-    print ("Mean Fare by passenger class in training set(rounded to two decimal places): ")
-    
-    class_1 = X[(X["Pclass"] == 1)]
-    class_2 = X[(X["Pclass"] == 2)]
-    class_3 = X[(X["Pclass"] == 3)]
-    fare1 = round(class_1['Fare'].mean(), 2) 
-    fare2 = round(class_2['Fare'].mean(), 2)         
-    fare3 = round(class_3['Fare'].mean(), 2)  
-                      
-    print ("Class 1: ", fare1 , "Class 2: ", fare2, "Class 3: ", fare3)
-    print ("<Using this mean to impute into missing values for the Fare feature in training and test set>\n")
-    
-    a = X[(X['Fare'].isnull())]
-    b = X_test_submit[(X_test_submit['Fare'].isnull())]
-    
-    print ("Records with missing fare value:\n")
-    print ("From training set: \n", a)
-    print ("From test set: \n", b)
-          
-    X_test_submit['Fare'] = X_test_submit['Fare'].fillna(fare3)
-         
-    #if(X[(X['Fare'].isnull())] and X['Pclass'] == 1):
-    #    X['Fare'].fillna(fare1)
-    #elif(X[(X['Fare'].isnull())] and X['Pclass'] == 2):
-    #    X['Fare'].fillna(fare2)
-    #else:
-    #    X['Fare'].fillna(fare3)
-    # 
-    #if(X_test_submit[(X_test_submit['Fare'].isnull())] and X_test_submit['Pclass'] == 1):
-    #    X_test_submit['Fare'].fillna(fare1)
-    #elif(X_test_submit[(X_test_submit['Fare'].isnull())] and X_test_submit['Pclass'] == 2):
-    #    X_test_submit['Fare'].fillna(fare2)
-    #else:
-    #    X_test_submit['Fare'].fillna(fare3)     
-    
-    print ("Passenger of class 3, using mean value for class 3 fare")
-    
-    input("Press Enter to continue...\n")
-    
-    print ("For Embarked, mode imputation is appropriate since it is a categorical feature...")
-    print ("Mode of Embarked in training set: ", X['Embarked'].value_counts().index[0])
-    print ("<Using this meode to impute into missing values for the Embarked feature in training and test set>/n")
-    
-    mode = X["Embarked"].value_counts().index[0] #index 0, because that is max occurence.  Auto-sorted.
-    X['Embarked'] = X['Embarked'].fillna(mode)
-    
-    input("Press Enter to continue...\n")
-    #no more missing values verified:
-    print ("Verifying that all missing values cleaned up...")
-    print ("Training data results for null values: \n")
-    print (X.isnull().sum())
-    print ("Test data results for null values: \n")
-    print (X_test_submit.isnull().sum())
-    
-    print ("Visualizng and Describing the data\n")
-    print ("<Converting Categorial features: PClass, Sex, Embarked,and (target) Survived into dtype=category for descriptive statistics>") 
-    
-    
-    for col in ['Pclass','Sex', 'Embarked']:
+    for col in ['Pclass','Sex', 'Embarked', 'Title']:
         temp1 = pd.get_dummies(X[col]) 
-        temp2 = pd.get_dummies(X_test_submit[col]) 
-        del X[col], X_test_submit[col]
+        del X[col]
         X = pd.concat([X, temp1], axis=1)
-        X_test_submit = pd.concat([X_test_submit, temp2], axis=1)
+#    del X['Title'] may not even be worth having title
+            
+    X.rename(columns={1:'Pclass_1', 2:'Pclass_2', 3:'Pclass_3', 'C':'Cherbourg', 'Q':'Queenstown', 'S':'Southampton'}, inplace=True)
     
-    X.rename(columns={1:'Pclass_1', 2:'Pclass_2', 3:'Pclass_3', 'C':'Cherbourg', 'Q':'Queenstown', 'S':'Southamption'}, inplace=True)
-    X_test_submit.rename(columns={1:'Pclass_1', 2: 'Pclass_2', 3:'Pclass_3', 'C':'Cherbourg', 'Q':'Queenstown', 'S':'Southamption'}, inplace=True)
+    print(X.head())
+        
+    presentStepTo("train linear regression model to predict and impute age")
     
-    print ("Convert integers to floating numbers, this is necessary for scilean Random Forest Algorithm")
+    #make copy
+    X_temp = X.copy()
     
-    X[["SibSp","Parch"]] = X[["SibSp","Parch"]].astype('float64')    
-    X_test_submit[["SibSp","Parch"]] = X_test_submit[["SibSp","Parch"]].astype('float64') 
+    #recreate classes
+    X_temp['Pclass'] = 0
+    X_temp['Pclass'] = X_temp.apply(lambda row: 1 if row['Pclass_1'] == 1 else 2 if row['Pclass_2'] == 1 else 3, axis=1).astype(int)
+    del X_temp['Pclass_1'], X_temp['Pclass_2'], X_temp['Pclass_3']
+
+    #remove all rows with missing values, split into y and X
+    X_temp = X_temp.dropna()
+        
+    #re-order columns, x0 first column
+    cols = X_temp.columns.tolist()
+    cols = cols[-1:] + cols[:-1]
+    X_temp = X_temp[cols]
     
-    print (X.head(10))
-    print (X_test_submit.head(10))
-     
-    descriptive_stats = X.describe()
+    #split into y values
+    y_temp = X_temp["Age"]
+    del X_temp["Age"]
     
-    print (descriptive_stats.round(4))
+    feature_names_quant = ['Pclass', 'SibSp', 'Parch', 'Fare']
+    feature_names_categorical = ['female', 'male', 'Cherbourg', 'Queenstown', 'Southampton',
+       'common_title', 'noble_title', 'military_title', 'professional_title']
     
-    print ("Encode categorical variables PClass, Sex, Embarked...\n")
+    X_temp_quant = X_temp[feature_names_quant]
+    
+    #First search for polynomial features only includes quantitative data.  
+    #In this search, we include both interactions and and powers
+    X_temp_train, X_temp_test, y_temp_train, y_temp_test = train_test_split(X_temp, y_temp, test_size=0.2, random_state=0)
+    
+    #polynomial regression
+    poly_reg = PolynomialFeatures(degree=2)
+    X_temp_train_q = poly_reg.fit_transform(X_temp_train[feature_names_quant])
+    poly_feature_names_quant = poly_reg.get_feature_names(feature_names_quant)
+    
+    #Selecting by univariate measures, get top 50 percentile
+    #removes any highly correlated variables
+    #uses greedy search to choose which variables to keep by f-score and p-value
+    
+    selector_f = SelectPercentile(f_regression, percentile=50)
+    selector_f.fit(X_temp_train_q, y_temp_train)
+    
+    for n,s,p in zip(poly_feature_names_quant, selector_f.scores_, selector_f.pvalues_):
+        print ("F-score: %3.2f, p-value: %3.2f for feature %s " % (s,p,n))
+        
+    regression = LinearRegression()    
+    greedy_selector = RFECV(estimator=regression, cv=10,
+                     scoring='neg_mean_squared_error')
+    greedy_selector.fit(X_temp_train_q, y_temp_train)    
+    print('Optimal number of features: %d' % greedy_selector.n_features_)
+    
+    #create dataframe with optimal polynomial features
+    X_temp_train_df = pd.DataFrame(X_temp_train_q)
+    X_temp_train_df.columns = poly_feature_names_quant
+    X_temp_train_df = X_temp_train_df.loc[:, greedy_selector.support_]
+        
+    age_regressor = LinearRegression()
+    age_regressor = age_regressor.fit(X_temp_train_df, y_temp_train)
+    
+    #prep X test data, perform polynomial features selection then only use features as already output by
+    #greedy selection
+    
+    X_temp_test_q = pd.DataFrame(poly_reg.fit_transform(X_temp_test[feature_names_quant]))
+    X_temp_test_q.columns = poly_feature_names_quant
+    X_temp_test_q = X_temp_test_q.loc[:, greedy_selector.support_]
+    
+    y_pred = age_regressor.predict(X_temp_test_q)
+        
+    print(r2_score(y_temp_test, y_pred))
+    
+    #Second search for polynomial features includes qualitatitive data, i.e. categorical variables
+    #Will only search for interaction effects
+    
+    poly_reg = PolynomialFeatures(degree=2, interaction_only=True)
+
+    #create new table from new polynomial features concat with categorical features
+    
+    X_temp_train_c = poly_reg.fit_transform(X_temp_train[feature_names_categorical])
+    poly_feature_names_categorical = poly_reg.get_feature_names(feature_names_categorical)
+    X_temp_train_c = pd.DataFrame(X_temp_train_c)
+    X_temp_train_c.columns = poly_feature_names_categorical
+    X_temp_train_df = pd.concat([X_temp_train_df, X_temp_train_c], axis=1)
+        
+    selector_f = SelectPercentile(f_regression, percentile=50)
+    selector_f.fit(X_temp_train_df, y_temp_train)
+    
+    for n,s,p in zip(X_temp_train_df.columns, selector_f.scores_, selector_f.pvalues_):
+        print ("F-score: %3.2f, p-value: %3.2f for feature %s " % (s,p,n))
+
+    regression = LinearRegression()    
+    greedy_selector = RFECV(estimator=regression, cv=10,
+                     scoring='neg_mean_squared_error')
+    greedy_selector.fit(X_temp_train_df, y_temp_train)    
+    print('Optimal number of features: %d' % greedy_selector.n_features_)
+    
+    X_temp_train_df =  X_temp_train_df.loc[:, greedy_selector.support_]
+    
+    X_temp_test_c = pd.DataFrame(poly_reg.fit_transform(X_temp_test[feature_names_categorical]))
+    X_temp_test_c.columns = poly_feature_names_categorical
+    
+    X_temp_test = pd.concat([X_temp_test_q, X_temp_test_c], axis=1)
+    X_temp_test = X_temp_test.loc[:, greedy_selector.support_]
+
+    
+    age_regressor = LinearRegression()
+    age_regressor = age_regressor.fit(X_temp_train_df, y_temp_train)
+    
+    y_pred = age_regressor.predict(X_temp_test)
+        
+    print(r2_score(y_temp_test, y_pred))
+
+    X_age_regression_df = X.copy()
+    X_age_series = X_age_regression_df['Age']
+    X_age_regression_df['Pclass'] = X_age_regression_df.apply(lambda row: 1 if row['Pclass_1'] == 1 else 2 if row['Pclass_2'] == 1 else 3, axis=1).astype(int)
+    del X_age_regression_df['Pclass_1'], X_age_regression_df['Pclass_2'], X_age_regression_df['Pclass_3']
+    
+    poly_reg = PolynomialFeatures(degree=2)
+    X_age_regression_q = poly_reg.fit_transform(X_age_regression_df[feature_names_quant])
+    X_age_regression_q = pd.DataFrame(X_age_regression_q)
+    X_age_regression_q.columns = poly_reg.get_feature_names(feature_names_quant)
+    del X_age_regression_q['1']
+    
+    poly_reg = PolynomialFeatures(degree=2, interaction_only=False)
+    X_age_regression_c = poly_reg.fit_transform(X_age_regression_df[feature_names_categorical])
+    X_age_regression_c = pd.DataFrame(X_age_regression_c)
+    X_age_regression_c.columns = poly_reg.get_feature_names(feature_names_categorical)
+    del X_age_regression_c['1']
+    
+    X_age_regression_df = pd.concat([X_age_regression_q, X_age_regression_c], axis=1).loc[:, greedy_selector.support_]
+ 
+    X_age_regression_df['Age'] = X_age_series
+        
+    age_pred = age_regressor.predict(X_age_regression_df.loc[X_age_regression_df['Age'].isnull(), X_age_regression_df.columns != 'Age'])
+    
+    X.loc[X['Age'].isnull(), "Age"] = pd.Series(age_pred, index= X.loc[X['Age'].isnull(), "Age"].index)
+    X.loc[X['Age'] < 0, "Age"] = 0                
     
     
-    print ("Data Transformation, last step to clean data - feature scaling applied to the data set")
-    X_std = X
-    X_test_submit_std = X_test_submit
+    presentStepTo("verify there are no more missing values")
+    
+    print(X.isnull().sum())
+    
+    presentSection("Correlations")
+
+    presentStepTo("to reveiw correlations between features, print correlation matrix and ranked table")
+
+    correlations = pd.concat([X, y], axis=1).corr()
+    print(correlations)
+    
+    features = correlations.columns.tolist()
+    paired_features = list(itertools.combinations(features, 2))
+    corr_df = pd.DataFrame([])
+    corr_df['feature_pair'] = []
+    corr_df['pearson_correlation'] = []
+    for pair in paired_features:
+        corr_df.loc[len(corr_df)] = [pair, correlations[pair[0]][pair[1]]]
+    
+    corr_df = corr_df.sort_values(by="pearson_correlation", ascending=False)
+    corr_survived = corr_df[corr_df['feature_pair'].apply(lambda x: x[1] == 'Survived')]
+    
+    print(corr_df)
+    print(corr_survived)
+    
+    fig, ax = plt.subplots(figsize=(30,30))
+    sns.heatmap(correlations, 
+        xticklabels=correlations.columns,
+        yticklabels=correlations.columns, 
+        annot=True,
+        ax=ax)
+    
+    plt.show()
+    
+    presentStepTo("remove redundancies by targeting variables that present multicollinearity, i.e. dealing with the dummy variable trap")
+    
+    del X['female'], X['Queenstown'], X['common_title'], X['Pclass_3']
+    
+    
+#    presentStepTo("check for interaction effects")
+#
+#
+#    logistic_reg = LogisticRegression()  
+#    interaction = PolynomialFeatures(degree=2, include_bias=False)
+#    X_inter = pd.DataFrame(interaction.fit_transform(X), columns=interaction.get_feature_names(X.columns))
+#    
+#    greedy_selector = RFECV(estimator=logistic_reg, cv=10, scoring='accuracy')
+#    greedy_selector.fit(X_inter, y)    
+#    print('Optimal number of features: %d' % greedy_selector.n_features_)
+#    
+#    X_inter = X_inter.loc[:, greedy_selector.support_]
+#    
+#    plt.figure()
+#    plt.xlabel("Number of features selected")
+#    plt.ylabel("Cross validation score (nb of correct classifications)")
+#    plt.plot(range(1, len(greedy_selector.grid_scores_) + 1), greedy_selector.grid_scores_)
+#    plt.show()
+    
+    presentSection("Feature Scaling")
+    
+    presentStepTo("apply feature scaling")
+    
+    X_std = X.copy()
     
     stdsc = StandardScaler(copy=True, with_mean=True, with_std=True) #must use standard scaler based on params from training, these  same params are appplied to the test data after.
-    X_std[['Age','Fare']] = stdsc.fit_transform(X[['Age','Fare']]) #fit and transform, to get params from X
-    X_test_submit_std[['Age','Fare']] = stdsc.transform(X_test_submit[['Age','Fare']])#only transform, because we will use the params from X
+    X_std[['Age','Fare']] = stdsc.fit_transform(X_std[['Age','Fare']]) #fit and transform, to get params from X
     
-    input("Press Enter to continue...\n")
+    X = X_std.copy()      
+         
+    print(X.head())
     
-    print ("...............................................................................")
-    print ("Split Data into Training and Test set")
-    print ("...............................................................................\n")
+    presentStepTo("split data into training and test sets")
     
     X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.20, random_state=1)
     
-    print ("Breakdown of training data, test data:")
-    print ("Samples in training data: ", X_train.shape[0])
-    print ("Samples in testing data: ", X_test.shape[0])
-    print ("80% in training data, 20% in test data")
+    printf("Observations in X_train: %d\n Observations in X_test: %d\nObservations in y_train: %d\nObservations in y_test: %d\n", len(X_train), len(X_test), len(y_train), len(y_test))
     
-    input("Press Enter to continue...\n")
-
-    print ("...............................................................................")
-    print ("Feature Scaling")
-    print ("...............................................................................\n")
+#    presentSection("Dimensionality Reduction")
     
-    X_train_std = X_train.copy()
-    X_test_std = X_test.copy()
-    X_test_submit_std = X_test_submit.copy()
+#    presentStepTo("apply principal component analysis")
+#    
+#    pipe_lr = Pipeline([('pca', PCA()),
+#                        ('clf', LogisticRegression(penalty='l2', 
+#                                                   random_state=1,
+#                                                   verbose=1))])
+#    
+#    #need to fix validation curve function, it should simply plot curve
+#    comp_range = range(1,12,1)
+#    train_scores, test_scores = validation_curve(estimator=pipe_lr, 
+#                                                 X=X_train, 
+#                                                 y=y_train,
+#                                                 param_name='pca__n_components',
+#                                                 param_range=comp_range,
+#                                                 cv=10)
+#    train_mean = np.mean(train_scores, axis=1)
+#    train_std = np.std(train_scores, axis=1)
+#    test_mean = np.mean(test_scores, axis=1)
+#    test_std = np.std(test_scores, axis=1)
+#    title = "Validation Curve for Logistic Regression"
+#    param_title = "Principal Components Analysis"
+#    
+#    plot_validation_curve(title, 
+#                          param_title, 
+#                          comp_range, 
+#                          train_mean, 
+#                          train_std, 
+#                          test_mean, 
+#                          test_std)
+#    
+#     
+#    idx = test_mean.argmax() #an array of the cumulative variance explained ratio, find first max
+#    opt_components = comp_range[idx]
     
-    stdsc = StandardScaler(copy=True, with_mean=True, with_std=True) #must use standard scaler based on params from training, these  same params are appplied to the test data after.
-    X_train_std[['Age','Fare']] = stdsc.fit_transform(X_train_std[['Age','Fare']]) #fit and transform, to get params from X
-    X_test_std[['Age','Fare']]   = stdsc.fit_transform(X_test_std[['Age','Fare']])
-    X_test_submit_std[['Age','Fare']] = stdsc.transform(X_test_submit_std[['Age','Fare']])#only transform, because we will use the params from X
-
-    input("Press Enter to continue...\n")
-
-    print ("...............................................................................")
-    print ("Principal Component Analysis")
-    print ("...............................................................................\n")
+    presentSection("train models with machine learning algorithms and find best performer")
     
-    #model tuning optimizing hyperparameters (validation curves)
+    alg = menu.presentMLMenu()
     
-    #Optimizing Principal Components
-    pipe_lr = Pipeline([('pca', PCA()),
-                        ('clf', LogisticRegression(penalty='l2', 
-                                                   random_state=1,
-                                                   verbose=1))])
-    
-    comp_range = range(1,12,1)
-    train_scores, test_scores = validation_curve(estimator=pipe_lr, 
-                                                 X=X_train_std, 
-                                                 y=y_train,
-                                                 param_name='pca__n_components',
-                                                 param_range=comp_range,
-                                                 cv=10)
-    train_mean = np.mean(train_scores, axis=1)
-    train_std = np.std(train_scores, axis=1)
-    test_mean = np.mean(test_scores, axis=1)
-    test_std = np.std(test_scores, axis=1)
-    title = "Validation Curve for Logistic Regression"
-    param_title = "Principal Components Analysis"
-    
-    plot_validation_curve(title, 
-                          param_title, 
-                          comp_range, 
-                          train_mean, 
-                          train_std, 
-                          test_mean, 
-                          test_std)
-    
-     
-    idx = test_mean.argmax() #an array of the cumulative variance explained ratio, find first max
-    opt_components = comp_range[idx]
-
-    print ("The number of components that the improves computational efficiency\n")
-    print ("with limited information loss: ", opt_components)
-
-    
-    input("Press Enter to continue...\n")
-
-    print ("...............................................................................")
-    print ("The Machine Learning Pipelines")
-    print ("...............................................................................\n")
-    
-    pipe_lr = Pipeline([('pca', PCA(n_components = opt_components)),
-                        ('clf', LogisticRegression(penalty='l2', 
-                                                   random_state=1,
-                                                   verbose=1))])
-    
-    
-    
-    print ("Model tuning Regularization for Logistic Regression\n\n")
-    
-    input("Press Enter to continue...\n")
-
-    
-    #Optimizing the regularization term: C = 1/lambda
-    c_range = [0.001, 0.01, 0.1, 1.0, 10.0, 100.0]
-    train_scores, test_scores = validation_curve(estimator=pipe_lr, 
-                                                 X=X_train_std, 
-                                                 y=y_train,
-                                                 param_name='clf__C',
-                                                 param_range=c_range,
-                                                 cv=10)
-
-    train_mean = np.mean(train_scores, axis=1)
-    train_std = np.std(train_scores, axis=1)
-    test_mean = np.mean(test_scores, axis=1)
-    test_std = np.std(test_scores, axis=1)
-    title = "Validation Curve for Logistic Regression"
-    param_title = "Parameter C"
-    
-    plot_validation_curve(title, param_title, c_range, train_mean, train_std, test_mean, test_std)
-    
-    idx = test_mean.argmax()
-    opt_C = c_range[idx]
-
-    print ("From the Validation curve we can see that a Parameter C above 10 is optimal./n")
-    print ("The Parameter C that produces the highest level of model acuracy: ", opt_C)
-    
-    input("Press Enter to continue...\n")
-    
-    print ("Running logistic regression with new hyperparameter values...")
-    
-    pipe_lr = Pipeline([('pca', PCA(n_components = opt_components)),
-                        ('clf', LogisticRegression(penalty='l2', 
-                                                   random_state=1,
-                                                   C = opt_C))])
+    if (alg == "LR"):    
+        clf = LogisticRegression(penalty='l2', random_state=1, verbose=1)
+        param_grid = [{'C': [0.0001, 0.001, 0.01, 0.1, 1, 10, 100, 1000]}]
+               
+    if (alg == "SVC"):
+        clf = SVC(random_state=1, verbose=1)
+#        param_grid = [{'C': [0.0001, 0.01, 0.1, 1, 10, 100, 1000], 'kernel': ['linear']}]
+        param_grid = [{'C': [0.01, 0.1, 1, 10, 100, 1000, 10000, 100000], 'gamma': [0.0001, 0.001, 0.01, 0.1, 1, 10], 'kernel': ['rbf']}]
         
-    pipe_lr.fit(X_train_std, y_train)
-    
-    print("Logistic Regression with Hyperparameters Tuned")
-    printf('Test Accuracy: %.3f\n' % pipe_lr.score(X_test_std, y_test)) #now that cv done, can use test data
-    
-    
-    #using the stratified k-fold method for cv, using sci-kit learn
-    scores = cross_val_score(estimator=pipe_lr,
-                             X=X_train_std,
-                             y=y_train,
-                             cv=10,
-                             n_jobs=-1)
-            
-    print('CV accuracy scores: %s' % scores)
-    print('CV accuracy: %.3f +/- %.3f' % (np.mean(scores), np.std(scores)))
-            
-    train_sizes, train_scores, test_scores = learning_curve(estimator=pipe_lr, 
-                                                            X=X_train_std, 
-                                                            y=y_train, 
-                                                            train_sizes=np.linspace(0.1, 1.0, 10), #we set train_sizes=np.linspace(0.1, 1.0, 10) to use 10 evenly spaced relative intervals for the training set sizes.
-                                                            cv=10, #k=10, set via the cv param
-                                                            n_jobs=-1)
-    train_mean = np.mean(train_scores, axis=1)
-    train_std = np.std(train_scores, axis=1)
-    test_mean = np.mean(test_scores, axis=1)
-    test_std = np.std(test_scores, axis=1)
-    title = "Learning Curve for Logistic Regression"
-    
-    plot_learning_curve(title, train_sizes, train_mean, train_std, test_mean, test_std)
-    
-    input("Press Enter to continue...\n")
-    
-    print ("Model tuning hyperparameters Gamma and C for SVM\n\n")
-    
-    pipe_svc = Pipeline([('pca', PCA(n_components = opt_components)),
-                         ('clf', SVC(random_state=1, verbose=1))])
-    param_range = [0.0001, 0.001, 0.01, 0.1, 1.0, 10.0, 100.0, 1000.0]
-    #set the param_grid parameter of GridSearchCV to a list of dictionaries to 
-    #specify the parameters that we'd want to tune.
-    #For the linear SVM, we only evaluated the inverse regularization parameter C;
-    # for the RBF kernel SVM, we tuned both the C and gamma parameter. 
-    
-    #Note that the gamma parameter is specific to kernel SVMs.
-    #Intuitively, the gamma parameter defines how far the influence of a single training 
-    #example reaches, with low values meaning ‘far’ and high values meaning ‘close’. 
-    #The gamma parameters can be seen as the inverse of the radius of influence of 
-    #samples selected by the model as support vectors.
-    
-    param_grid = [{'clf__C': param_range, 'clf__kernel': ['linear']}, 
-                  {'clf__C': param_range, 'clf__gamma': param_range, 'clf__kernel': ['rbf']}]
-    
-    #initialize gridsearch object to train and tune a support vector machine (SVM) pipeline.
-    #Grid Search will run all combinations of for C and gamma using k-fold cross-validation
-             
-    gs = GridSearchCV(estimator=pipe_svc, 
-                      param_grid=param_grid, 
-                      scoring='accuracy', 
-                      cv=10,
-                      verbose=1,
-                      n_jobs=-1) #n_jobs=-1 uses all cores
-    gs = gs.fit(X_train_std, y_train)
-    print("Results for SVM")
-    print("Best Score: ", gs.best_score_)
-    print("Best Params: ", gs.best_params_)
-    
-    #Finally, we will use the independent test dataset to estimate the performance 
-    #of the best selected model, which is available via the best_estimator_ attribute 
-    #of the GridSearchCV object
+    if (alg == "DT"):
+         clf = tree.DecisionTreeClassifier(random_state=0)
+         param_grid = [{'max_depth': [1, 2, 3, 4, 5, 6, 7]}];
         
-    clf = gs.best_estimator_
-    best_parameters = clf.get_params()
-    clf.fit(X_train_std, y_train)
-    
-    print('Test accuracy: %.3f' % clf.score(X_test_std, y_test))
-    
-    y_pred = clf.predict(X_test_std)    
-    print (classification_report(y_test, y_pred))
-    
-    #print ('Best parameters set:', best_parameters)
-    
-    confmat = confusion_matrix(y_true=y_test, y_pred=y_pred)
-    print(confmat)
-    
-    plot_confusion_matrix(confmat)
-    
-    
-    #Algorithm selection with nested Cross-validation
-    #this technique uses an inner loop to find the optimal hyperparameters
-    #for a given learning algorithm in the outer loop.  Very useful.
-    
-    #first an svm
-#    gs = GridSearchCV(estimator=pipe_svc,
-#                      param_grid=param_grid,
-#                      scoring='accuracy',
-#                      cv=10,
-#                      n_jobs=4)
-#    
-#    scores = cross_val_score(gs, X, y, scoring='accuracy', cv=5)
-#    print('CV accuracy: %.3f +/- %.3f' % (np.mean(scores), np.std(scores)))
-#    
-#    plot_learning_curve(title, train_sizes, train_mean, train_std, test_mean, test_std)
-#    
-    
-    #input("Press Enter to continue...\n")
-    
-    print ("Decision Tree Learning \n\n")
-    
-    #then try a decision tree classifier
-    gs = GridSearchCV(estimator=DecisionTreeClassifier(random_state=0),
-                      param_grid=[{'max_depth': [1, 2, 3, 4, 5, 6, 7, None]}],
-                                  scoring='accuracy',
-                                  cv=10,
-                                  n_jobs=-1)
-    scores = cross_val_score(gs,
-                             X_train,
-                             y_train,
-                             scoring='accuracy',
-                             cv=10)
-    
-    print('CV accuracy: %.3f +/- %.3f' % (np.mean(scores), np.std(scores)))
-    
-    pipe_svc.fit(X_train, y_train)
-    y_pred = pipe_svc.predict(X_test)
-    confmat = confusion_matrix(y_true=y_test, y_pred=y_pred)
-    print(confmat)
-    
-    plot_confusion_matrix(confmat)
-    
-    #precision, recall and f1-score, measuring the relevance of the model
-    
-    print (classification_report(y_test, y_pred))
-
-
-    print ("Random Forest")
-
-    forest = RandomForestClassifier(criterion='entropy',
+    if (alg == "RF"):
+        clf = RandomForestClassifier(criterion='entropy',
                                     n_estimators=10,
                                     random_state=1, 
-                                    n_jobs=-1) #jobs indicates how many cores to use.
+                                    n_jobs=-1)
+        param_grid = [{'max_depth': [1, 2, 3, 4, 5, 6, 7]}]
+        
+    if (alg == "ANN"):
+        clf = MLPClassifier(solver='sgd', 
+                           alpha=0.0001, #alpha is regularization term for L2
+                           hidden_layer_sizes=(4, 5), #hiddenlayer1 = 5 neurons, hiddenlayer2 = 2 neurons 
+                           max_iter=10000,
+                           random_state=1)
+        #parameters, learning_rate: adaptive, constant, learning_rate_init, activation, alpha, hidden_layer_sizes
+        #need to tune one parameter at a time.
+        param_grid = [{'hidden_layer_sizes': list(itertools.product(range(1,6), repeat=2))}, {'alpha': [0.00001, 0.0001, 0.001, 0.01, 0.1, 1.0]}]
+#        param_grid = [{'alpha': [0.0001]}]
+#        param_grid = [{'learning_rate': ['adaptive', 'constant']}]
+            
+    if (alg == "KNN"):
+        clf = KNeighborsClassifier(n_neighbors=17, weights='uniform', n_jobs=-1)
+        param_grid = [{'n_neighbors': [i for i in range(7,25,1)]}]
+#        param_grid = [{'weights': ['uniform', 'distance']}]
+        
+
+    scores = GridSearchCV(estimator=clf,
+                  param_grid=param_grid,
+                              scoring='accuracy',
+                              cv=10,
+                              verbose=1,
+                              return_train_score=True,
+                              n_jobs=-1)
+    scores.fit(X_train, y_train)
+    presentStepTo("show grid search cv results")
+    print('Exhasutive Grid Search CV results\n')
+    scores_df = pd.DataFrame(data=scores.cv_results_)
+    print(scores_df)
+    clf = scores.best_estimator_               
+    print("Optimal Model ", clf)
+    print("Accuracy: ", scores.best_score_)
+    y_pred = clf.predict(X_test)    
+    print (classification_report(y_test, y_pred))
     
-    gs = GridSearchCV(estimator = forest, 
-                      param_grid = [{'max_depth': [1,2,3,4,5,6,7,None]}], 
-                                    scoring ='accuracy', 
-                                    cv=10)
     
-    scores = cross_val_score(gs,
+    presentStepTo("show validation curve")
+
+    #validation curve
+    #If the training score and the validation score are both low, 
+    #the estimator will be underfitting. If the training score is high 
+    #and the validation score is low, the estimator is overfitting 
+    #and otherwise it is working very well. 
+    
+    #validation curve: plots both training score and cross-validation score.  
+    #Y-axis: score, x-axis: parameter being tuned.
+    train_scores_mean = scores_df['mean_train_score'].values
+    train_scores_std = scores_df['std_train_score'].values
+    test_scores_mean = scores_df['mean_test_score'].values
+    test_scores_std = scores_df['std_test_score'].values
+    params = scores_df.iloc[:, 4].tolist()
+    param_title = scores_df.columns[4]
+    title = "Validation Curve for " + alg
+
+    plot_validation_curve(title, param_title, params, train_scores_mean, train_scores_std, test_scores_mean, test_scores_std)
+    
+    scores = cross_val_score(clf,
                              X_train,
                              y_train,
                              scoring='accuracy',
                              cv=10)
-    print("Results for Decision Tree")
-    print('CV accuracy: %.3f +/- %.3f' % (np.mean(scores), np.std(scores)))
     
-    forest.fit(X_train, y_train)
-    accuarcy_score = forest.score(X_test, y_test)
-    print('Accuracy: %.2f\n' % accuarcy_score)
+    print('\n10 Folds CV for best model, accuracy: %.3f +/- %.3f' % (np.mean(scores), np.std(scores)))
     
-    y_pred = forest.predict(X_test)
+    #learning curve:
+    #shows validation and training score of an estimator for various number of training samples.
+    #Tells us if we benefit from adding more training data and whether the estimator suffers from
+    #variance error or a bias error
+    #if both validation score and training score converge to a value that is too low with
+    #increasing size of the training set, we will not benefit much from more training data. (high bias, may be underfitting)
+    #If the training score is much greater than the validation accuracy score for the maximum number of training
+    #samples, more data will most likely increase generalization.  Look for the gap. (high variance, may be over fitting)
+        
+    
+    presentStepTo("show learning curve")
+
+    train_sizes, train_scores, test_scores = learning_curve(estimator=clf, 
+                                                        X=X_train, 
+                                                        y=y_train, 
+                                                        train_sizes=np.linspace(0.1, 1.0, 10), #we set train_sizes=np.linspace(0.1, 1.0, 10) to use 10 evenly spaced relative intervals for the training set sizes.
+                                                        cv=10, #k=10, set via the cv param
+                                                        n_jobs=-1)
+    train_mean = np.mean(train_scores, axis=1)
+    train_std = np.std(train_scores, axis=1)
+    test_mean = np.mean(test_scores, axis=1)
+    test_std = np.std(test_scores, axis=1)
+    title = "Learning Curve for " + alg    
+    plot_learning_curve(title, train_sizes, train_mean, train_std, test_mean, test_std)
+    
+    presentStepTo("\nshow ROC curve and calculate Area Under the Curve")
+
+    #ROC - receive operator curve
+    fpr, tpr, thresholds = roc_curve(y_test,y_pred)
+    plot_roc_curve(fpr, tpr, roc_auc_score(y_test, y_pred))
+
+    presentStepTo("show confusion matrix")
     confmat = confusion_matrix(y_true=y_test, y_pred=y_pred)
     print(confmat)
-    
     plot_confusion_matrix(confmat)
     
-    y_pred = forest.predict(X_test_submit)
-    y_pred_df = pd.DataFrame(y_pred)
-    y_pred_df.to_csv("submission.csv")
+    #decision boundary
+    
+#    plot_decision_boundary(clf, X_test.values.astype(float), y_test.values)
+
+                
+    if(alg == 'DT'):    
+        dot_data = tree.export_graphviz(clf, class_names=["Did not Survive","Survived"], feature_names=X_test.columns, out_file="myTree.dot", filled=True)
+        with open ("myTree.dot") as f:
+            dot_graph = f.read()   
+        graphviz.Source(dot_graph)
+    
+
+
     
     
-    print ("Neural Network")
     
-    
-    clf = MLPClassifier(solver='lbgfs', 
-                        #alpha=1e-5, #alpha is regularization term for L2
-                        #hidden_layer_sizes=(5, 2), #hiddenlayer1 = 5 neurons, hiddenlayer2 = 2 neurons 
-                        random_state=1) 
-    
-    param_grid = [{'clf__alpha': 10.0 ** -np.arange(1,7), 'clf__hidden_layer_sizes': [(3,3),(4,3),(5,3)]}] 
-    
-    gs = GridSearchCV(estimator = clf, 
-                      param_grid = param_grid,
-                      scoring ='accuracy', 
-                      cv=10)
-    scores = cross_val_score(gs,
-                             X_train_std,
-                             y_train,
-                             scoring='accuracy',
-                             cv=10,
-                             n_jobs=-1)
-    print ("Results for Neural Network:")
-    print('CV accuracy: %.3f +/- %.3f' % (np.mean(scores), np.std(scores)))
-    
-    clf.fit(X_train_std, y_train)
-    y_pred = clf.predict(X_test_std)
-    print (classification_report(y_test, y_pred))
+   
+
